@@ -75,7 +75,7 @@ def brute_force_password(encrypted_data):
 
 def parse_urls(decrypted_data):
     """Parses URLs from the decrypted data."""
-    matches = re.finditer(r"http.*\.(txt|yaml)", decrypted_data)
+    matches = re.finditer(r"http.*\.(yaml|txt)", decrypted_data)
     urls = [match.group(0) for match in matches]
     if not urls:
         raise ValueError("No URLs found in the decrypted data.")
