@@ -130,9 +130,9 @@ def main():
         urls = parse_urls(decrypted_data)
         logging.info("URLs parsed successfully.")
         # 打印URLs的具体内容
-        print("Parsed URLs:")
+        logging.info("Parsed URLs:")
         for url in urls:
-            print(url)
+            logging.info(url)
 
         # Download files from the parsed URLs
         download_files(urls)
