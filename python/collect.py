@@ -16,8 +16,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-YUDOU_HOME = "https://blues2022.blogspot.com/"
-# YUDOU_HOME = "https://www.yudou66.cc/"
+YUDOU_HOME = "https://www.youtube.com/@ZYFXS"
 OUTPUT_DIR = "../output/"
 
 
@@ -115,29 +114,7 @@ def main():
         today_url = hrefs[0]
         logging.info(f"Reading URL: {today_url}")
 
-        # Fetch today's page and extract encryption script
-        today_etree = fetch_html(today_url)
-        scripts = today_etree.xpath("//script")
-        encryption = extract_encryption_script(scripts)
-        if not encryption:
-            raise ValueError("Failed to extract encryption data.")
-
-        logging.info("Encryption data retrieved successfully.")
-
-        # Decrypt and parse URLs
-        decrypted_data = brute_force_password(encryption)
-        logging.info("Decryption successful.")
-
-        urls = parse_urls(decrypted_data)
-        logging.info("URLs parsed successfully.")
-        # 打印URLs的具体内容
-        logging.info("Parsed URLs:")
-        for url in urls:
-            logging.info(url)
-
-        # Download files from the parsed URLs
-        download_files(urls)
-        logging.info("All files downloaded successfully.")
+       
 
     except Exception as e:
         logging.error(f"Error: {e}")
