@@ -5,26 +5,17 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
-# 日志配置
 def setup_logger():
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
     
-    # 控制台日志格式
     console_handler = logging.StreamHandler()
-    console_format = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s'
-    )
+    console_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     console_handler.setFormatter(console_format)
-    console_handler.setLevel(logging.INFO)
     
-    # 文件日志格式
     file_handler = logging.FileHandler('youtube_scraper.log')
-    file_format = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    file_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(file_format)
-    file_handler.setLevel(logging.DEBUG)
     
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
@@ -32,56 +23,54 @@ def setup_logger():
 
 logger = setup_logger()
 
+def extract_video_url(element):
+    """从元素中提取视频URL"""
+    for parent in element.parents:
+        if parent.name == 'a' and 'href' in parent.attrs:
+            return 'https://www.youtube.com' + parent['href']
+    return None
+
 def get_latest_dated_video(channel_url):
     try:
         logger.info(f"开始处理频道: {channel_url}")
-        response = requests.get(channel_url)
+        response = requests.get(channel_url, headers={'User-Agent': 'Mozilla/5.0'})
         response.raise_for_status()
-        logger.debug(f"HTTP响应状态: {response.status_code}")
         
         soup = BeautifulSoup(response.text, 'html.parser')
-        video_items = soup.find_all('a', {'id': 'video-title-link'})
-        logger.info(f"找到{len(video_items)}个视频元素")
+        date_pattern = re.compile(r'\d{4}年\d{1,2}月\d{1,2}日')
         
-        date_pattern = re.compile(r'(\d{4})年(\d{1,2})月(\d{1,2})日')
-        dated_videos = []
+        # 查找所有包含日期文本的元素
+        date_elements = soup.find_all(string=date_pattern)
+        logger.info(f"找到{len(date_elements)}个日期元素")
         
-        for idx, item in enumerate(video_items):
+        videos = []
+        for element in date_elements:
             try:
-                title = item.get('title', '')
-                logger.debug(f"正在检查第{idx+1}个视频: {title[:30]}...")
-                
-                match = date_pattern.match(title)
-                if match:
-                    year, month, day = map(int, match.groups())
-                    video_date = datetime(year, month, day)
-                    video_url = 'https://www.youtube.com' + item['href']
-                    dated_videos.append((video_date, video_url, title))
-                    logger.info(f"发现日期格式视频: {video_date} - {title[:20]}...")
-            
+                date_text = element.strip()
+                url = extract_video_url(element)
+                if url:
+                    match = date_pattern.match(date_text)
+                    if match:
+                        year, month, day = map(int, match.groups())
+                        video_date = datetime(year, month, day)
+                        videos.append((video_date, url, date_text))
+                        logger.debug(f"发现视频: {date_text} -> {url}")
             except Exception as e:
-                logger.error(f"处理第{idx+1}个视频时出错: {str(e)}", exc_info=True)
+                logger.error(f"处理元素时出错: {str(e)}", exc_info=True)
         
-        if dated_videos:
-            dated_videos.sort(reverse=True)
-            latest = dated_videos[0][1]
-            logger.info(f"找到最新视频: {latest}")
-            return latest
-        
-        logger.warning("未找到符合日期格式的视频")
+        if videos:
+            videos.sort(reverse=True)
+            latest_url = videos[0][1]
+            logger.info(f"最新视频链接: {latest_url}")
+            return latest_url
+            
+        logger.warning("未找到有效视频链接")
         return None
         
-    except requests.exceptions.RequestException as e:
-        logger.error(f"网络请求失败: {str(e)}", exc_info=True)
-        raise
     except Exception as e:
-        logger.critical(f"程序发生未预期错误: {str(e)}", exc_info=True)
+        logger.error(f"处理过程中发生错误: {str(e)}", exc_info=True)
         raise
 
 if __name__ == '__main__':
-    try:
-        channel_url = "https://www.youtube.com/@ZYFXS"
-        latest_video = get_latest_dated_video(channel_url)
-        print(f"最新视频链接: {latest_video}")
-    except Exception:
-        logger.exception("主程序执行失败")
+    channel_url = "https://www.youtube.com/@ZYFXS"
+    print("最新视频链接:", get_latest_dated_video(channel_url))
