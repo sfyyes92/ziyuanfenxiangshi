@@ -23,19 +23,19 @@ def setup_logger():
 
 logger = setup_logger()
 
-def extract_video_data(element):
-    """提取视频URL和日期数据"""
+def extract_url_context(page_content, date_element):
+    """在找到日期元素后，查找url字符串并打印其后100个字符"""
     try:
-        # 查找最近的<a>标签获取URL
-        url_tag = element.find_parent('a', href=re.compile(r'/watch\?v='))
-        if url_tag:
-            raw_url = url_tag['href'].replace('\\u0026', '&')
-            return {
-                'url': f"https://www.youtube.com{raw_url.split('&pp=')[0]}",
-                'date_text': element.get_text().strip()
-            }
+        content_str = str(page_content)
+        date_pos = content_str.find(str(date_element))
+        if date_pos != -1:
+            url_pos = content_str.find('url', date_pos)
+            if url_pos != -1:
+                url_context = content_str[url_pos:url_pos+103]  # url(3) + 100
+                logger.info(f"找到url上下文: {url_context}")
+                return url_context
     except Exception as e:
-        logger.error(f"元素解析失败: {str(e)}")
+        logger.error(f"上下文提取失败: {str(e)}")
     return None
 
 def get_videos_by_date(channel_url):
@@ -50,28 +50,14 @@ def get_videos_by_date(channel_url):
         soup = BeautifulSoup(response.text, 'html.parser')
         date_pattern = re.compile(r'\d{4}年\d{1,2}月\d{1,2}日')
         
-        # 查找所有包含日期的元素
         dated_elements = soup.find_all(string=date_pattern)
         logger.info(f"找到{len(dated_elements)}个日期元素")
         
-        videos = []
         for element in dated_elements:
-            video_data = extract_video_data(element)
-            if video_data:
-                try:
-                    date_match = date_pattern.search(video_data['date_text'])
-                    if date_match:
-                        date_obj = datetime.strptime(date_match.group(), '%Y年%m月%d日')
-                        videos.append((date_obj, video_data['url']))
-                except ValueError as e:
-                    logger.warning(f"日期解析失败: {video_data['date_text']} - {str(e)}")
+            url_context = extract_url_context(soup, element)
+            if url_context:
+                print(f"URL上下文内容: {url_context}")
         
-        if videos:
-            videos.sort(reverse=True)
-            logger.info(f"成功获取{len(videos)}个视频链接")
-            return [url for _, url in videos]
-            
-        logger.warning("未提取到有效视频数据")
         return []
         
     except requests.RequestException as e:
@@ -82,5 +68,4 @@ def get_videos_by_date(channel_url):
 
 if __name__ == '__main__':
     channel_url = "https://www.youtube.com/@ZYFXS"
-    video_links = get_videos_by_date(channel_url)
-    print("提取到的视频链接:", video_links)
+    get_videos_by_date(channel_url)
