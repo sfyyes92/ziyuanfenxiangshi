@@ -8,14 +8,32 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
-import pyperclip  # 用于从剪贴板获取源代码
+import os
+import tempfile
 
 def setup_selenium():
     chrome_options = Options()
     chrome_options.add_argument("--window-size=1920x1080")
-    # 注意：这里不能使用无头模式，因为需要模拟右键操作
-    driver = webdriver.Chrome(options=chrome_options)
-    return driver
+    
+    # 创建临时用户数据目录
+    temp_dir = tempfile.mkdtemp()
+    chrome_options.add_argument(f"--user-data-dir={temp_dir}")
+    
+    # 其他推荐配置
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    try:
+        driver = webdriver.Chrome(options=chrome_options)
+        return driver
+    except Exception as e:
+        print(f"浏览器初始化失败: {e}")
+        # 清理临时目录
+        try:
+            os.rmdir(temp_dir)
+        except:
+            pass
+        raise
 
 def extract_youtube_links(driver, channel_url):
     try:
@@ -80,30 +98,13 @@ def get_page_source_with_selenium(driver, url):
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
         
-        # 模拟右键点击并选择"查看页面源代码"
-        actions = ActionChains(driver)
-        actions.key_down(Keys.CONTROL).send_keys('u').key_up(Keys.CONTROL).perform()
-        
-        # 切换到新标签页（源代码页）
-        driver.switch_to.window(driver.window_handles[-1])
-        
-        # 等待源代码页面加载
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "pre"))
-        )
-        
-        # 获取完整的源代码
-        full_source = driver.find_element(By.TAG_NAME, "pre").text
+        # 获取当前页面源代码
+        full_source = driver.page_source
         return full_source
         
     except Exception as e:
         print(f"获取页面源代码出错: {e}")
         return None
-    finally:
-        # 关闭源代码标签页，回到原页面
-        if len(driver.window_handles) > 1:
-            driver.close()
-            driver.switch_to.window(driver.window_handles[0])
 
 def extract_download_addresses_from_source(full_source):
     if not full_source:
@@ -122,9 +123,10 @@ def extract_download_addresses_from_source(full_source):
 
 if __name__ == "__main__":
     print("初始化浏览器...")
-    driver = setup_selenium()
-    
+    driver = None
     try:
+        driver = setup_selenium()
+        
         channel_url = "https://www.youtube.com/@ZYFXS"
         print(f"正在处理频道: {channel_url}")
         
@@ -168,5 +170,8 @@ if __name__ == "__main__":
         else:
             print("\n无法获取完整页面源代码")
             
+    except Exception as e:
+        print(f"程序运行出错: {e}")
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
