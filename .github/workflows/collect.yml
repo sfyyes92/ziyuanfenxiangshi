@@ -19,7 +19,7 @@ jobs:
         python-version: '3.13'
         cache: 'pip'
     - run: pip install -r python/requirements.txt
-    - run: pip install selenium webdriver-manager
+    - run: pip install selenium webdriver-manager bs4 re
     - name: Collect
       run: |
         cd python && python collect.py 
