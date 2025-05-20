@@ -62,7 +62,7 @@ def extract_download_link(video_url):
         return None
 
     # 查找所有"下载地址：https://paste.to/"出现的位置
-    download_markers = [m.start() for m in re.finditer('下载地址：https://paste\.to/', html_content)]
+    download_markers = [m.start() for m in re.finditer('下载地址：https://paste.to/', html_content)]
     potential_links = []
     
     for marker_pos in download_markers:
