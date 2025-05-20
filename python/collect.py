@@ -57,6 +57,7 @@ def extract_download_addresses(video_url):
         response = requests.get(video_url, headers=headers)
         response.raise_for_status()
         html_content = response.text
+        print(html_content)
     except requests.exceptions.RequestException as e:
         print(f"无法访问视频页面: {e}")
         return None
