@@ -23,17 +23,17 @@ def setup_logger():
 
 logger = setup_logger()
 
-def extract_url_context(page_content, date_element):
-    """在找到日期元素后，查找url字符串并打印其后100个字符"""
+def extract_watch_context(page_content, date_element):
+    """在找到日期元素后，查找/watch?v=并打印其后100个字符"""
     try:
         content_str = str(page_content)
         date_pos = content_str.find(str(date_element))
         if date_pos != -1:
-            url_pos = content_str.find('url', date_pos)
-            if url_pos != -1:
-                url_context = content_str[url_pos:url_pos+103]  # url(3) + 100
-                logger.info(f"找到url上下文: {url_context}")
-                return url_context
+            watch_pos = content_str.find('/watch?v=', date_pos)
+            if watch_pos != -1:
+                watch_context = content_str[watch_pos:watch_pos+100]
+                logger.info(f"找到/watch上下文: {watch_context}")
+                return watch_context
     except Exception as e:
         logger.error(f"上下文提取失败: {str(e)}")
     return None
@@ -54,9 +54,9 @@ def get_videos_by_date(channel_url):
         logger.info(f"找到{len(dated_elements)}个日期元素")
         
         for element in dated_elements:
-            url_context = extract_url_context(soup, element)
-            if url_context:
-                print(f"URL上下文内容: {url_context}")
+            watch_context = extract_watch_context(soup, element)
+            if watch_context:
+                print(f"/watch上下文内容: {watch_context}")
         
         return []
         
