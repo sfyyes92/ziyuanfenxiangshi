@@ -1,61 +1,50 @@
-#### Python脚本
-
-```python
-import re
 import requests
 from bs4 import BeautifulSoup
+import re
 
-# YouTube频道页面URL
-CHANNEL_URL = "https://www.youtube.com/@ZYFXS"  # 注意：实际URL可能不包含'@'，而是'/c/'
-
-# 设置请求头以模拟浏览器访问
-HEADERS = {
-    'User-Agent': 'Mozilla/. (Windows NT .; Win; x) AppleWebKit/.6 (KHTML, like Gecko) Chrome/1.0.. Safari/7.'
-}
-
-def get_latest_video_link_by_date(channel_url):
-    try:
-        response = requests.get(channel_url, headers=HEADERS)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 搜索日期格式的视频标题，假设格式为“YYYY年MM月DD日 - 视频标题”
-        date_pattern = re.compile(r'(\d{}年\d{,}月\d{,}日)')
-        dates = soup.find_all(string=date_pattern)
-        
-        if not dates:
-            print("未找到包含日期的视频标题")
-            return None
-        
-        # 由于我们假设页面按时间顺序列出视频，因此取第一个匹配的日期（最新视频）
-        latest_date_str = dates]
-        latest_date_pos = soup.get_text().find(latest_date_str)
-        
-        # 在找到的日期附近搜索视频链接，这里我们简化处理，直接搜索/watch?v=
-        # 注意：这种方法可能不准确，因为/watch?v=可能出现在其他不相关的位置
-        # 更可靠的方法是找到包含日期的<a>标签或<div>容器，并提取其内的链接
-        # 但由于YouTube页面的复杂性，这里我们采用简化的方法作为示例
-        watch_pattern = re.compile(r'/watch\?v=[\w-]+')
-        
-        # 从日期位置开始搜索/watch?v=
-        match = watch_pattern.search(soup.get_text()[latest_date_pos:])
-        
-        if not match:
-            print("在日期附近未找到/watch?v=链接")
-            return None
-        
-        # 提取完整的/watch?v=链接部分
-        watch_query = match.group()
-        video_link = f"https://www.youtube.com{watch_query}"
-        
-        print(f"找到最新日期视频链接: {video_link}")
-        return video_link
+def find_youtube_links_by_date(channel_url, target_date):
+    # 发送HTTP请求获取页面内容
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
     
-    except requests.RequestException as e:
-        print(f"网络请求异常: {e}")
-    except Exception as e:
-        print(f"发生错误: {e}")
+    try:
+        response = requests.get(channel_url, headers=headers)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"无法访问页面: {e}")
+        return []
+    
+    # 使用BeautifulSoup解析HTML
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # 查找包含目标日期的文本
+    date_pattern = re.escape(target_date)
+    pattern = re.compile(f'{date_pattern}.*?/watch\\?v=([^"]+)')
+    
+    # 查找所有匹配的视频ID
+    matches = pattern.findall(response.text)
+    
+    # 构建完整的视频链接
+    video_links = [f'https://www.youtube.com/watch?v={vid}' for vid in matches]
+    
+    return list(set(video_links))  # 去重
 
-# 执行函数以获取链接
-get_latest_video_link_by_date(CHANNEL_URL)
+if __name__ == "__main__":
+    # 目标频道
+    channel_url = "https://www.youtube.com/@ZYFXS"
+    
+    # 用户输入目标日期
+    target_date = input("请输入要查找的日期(格式如: 2023年10月15日): ")
+    
+    print(f"正在查找 {target_date} 的视频链接...")
+    
+    # 查找并打印结果
+    video_links = find_youtube_links_by_date(channel_url, target_date)
+    
+    if video_links:
+        print(f"找到 {len(video_links)} 个视频链接:")
+        for i, link in enumerate(video_links, 1):
+            print(f"{i}. {link}")
+    else:
+        print("没有找到匹配的视频链接")
