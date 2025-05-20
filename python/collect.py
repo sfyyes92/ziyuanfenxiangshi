@@ -89,6 +89,7 @@ def extract_download_addresses(driver, video_url):
             pass
         
         html_content = driver.page_source
+        print(html_content)
     except Exception as e:
         print(f"访问视频页面出错: {e}")
         return None
