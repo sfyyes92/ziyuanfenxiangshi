@@ -68,6 +68,7 @@ def extract_download_addresses(video_url):
     for marker_pos in download_markers:
         # 提取标记位置后200个字符（扩大范围以确保包含完整地址）
         segment = html_content[marker_pos:marker_pos+200]
+        print(segment)
         download_segments.append(segment)
     
     return download_segments
