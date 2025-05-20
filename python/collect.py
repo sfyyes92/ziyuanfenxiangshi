@@ -62,7 +62,7 @@ def extract_all_paste_links(video_url):
         return None
 
     # 修改点：直接查找"https://paste.to/"而不转义点号
-    paste_markers = [m.start() for m in re.finditer('https://paste.to/', html_content)]
+    paste_markers = [m.start() for m in re.finditer('https://paste\.to/', html_content)]
     paste_segments = []
     
     for marker_pos in paste_markers:
