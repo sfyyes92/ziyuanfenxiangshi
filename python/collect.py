@@ -63,27 +63,34 @@ def extract_download_link(video_url):
 
     # 查找所有"下载地址：https://paste.to/"出现的位置
     download_markers = [m.start() for m in re.finditer('下载地址：https://paste\.to/', html_content)]
+    potential_links = []
     
     for marker_pos in download_markers:
-        # 从标记位置开始查找换行密码提示
-        password_pos = html_content.find('\n（密码在上方youtube视频中口述）', marker_pos)
+        # 提取标记位置后100个字符
+        segment = html_content[marker_pos:marker_pos+100]
         
-        # 检查两者之间是否有>字符
-        if password_pos == -1:
+        # 检查是否包含"..."，如果包含则跳过
+        if "..." in segment:
             continue
             
-        between_content = html_content[marker_pos:password_pos]
-        if '>' in between_content:
-            continue
-            
-        # 提取https://paste.to/...这部分（直到换行符前）
-        start = html_content.find('https://paste.to/', marker_pos)
-        end = html_content.find('\n', start)
-        
-        if start != -1 and end != -1:
-            return html_content[start:end]
+        potential_links.append(segment)
     
-    return None
+    if not potential_links:
+        return None
+    
+    # 选择第一个有效的候选链接
+    selected_segment = potential_links[0]
+    
+    # 从选中的片段中提取https://paste.to/...到换行符前的内容
+    start = selected_segment.find('https://paste.to/')
+    if start == -1:
+        return None
+        
+    end = selected_segment.find('\n', start)
+    if end == -1:
+        return selected_segment[start:]  # 如果没有换行符，则取到字符串末尾
+    else:
+        return selected_segment[start:end]
 
 if __name__ == "__main__":
     channel_url = "https://www.youtube.com/@ZYFXS"
