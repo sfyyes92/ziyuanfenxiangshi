@@ -48,7 +48,7 @@ def find_latest_video(video_links):
         return None
     return sorted(video_links, key=lambda x: x['date_obj'], reverse=True)[0]
 
-def extract_all_paste_links(video_url):
+def extract_download_addresses(video_url):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
@@ -61,16 +61,16 @@ def extract_all_paste_links(video_url):
         print(f"无法访问视频页面: {e}")
         return None
 
-    # 修改点：直接查找"https://paste.to/"而不转义点号
-    paste_markers = [m.start() for m in re.finditer('https://paste\.to/', html_content)]
-    paste_segments = []
+    # 查找所有"下载地址"出现的位置
+    download_markers = [m.start() for m in re.finditer('下载地址', html_content)]
+    download_segments = []
     
-    for marker_pos in paste_markers:
-        # 提取标记位置后100个字符
-        segment = html_content[marker_pos:marker_pos+100]
-        paste_segments.append(segment)
+    for marker_pos in download_markers:
+        # 提取标记位置后200个字符（扩大范围以确保包含完整地址）
+        segment = html_content[marker_pos:marker_pos+200]
+        download_segments.append(segment)
     
-    return paste_segments
+    return download_segments
 
 if __name__ == "__main__":
     channel_url = "https://www.youtube.com/@ZYFXS"
@@ -87,14 +87,19 @@ if __name__ == "__main__":
     print(f"\n找到最新视频: {latest_video['date_str']}")
     print(f"视频链接: {latest_video['url']}")
     
-    # 第二步：从视频页面提取所有paste.to链接片段
-    print("\n正在从视频页面提取所有https://paste.to/链接片段...")
-    paste_segments = extract_all_paste_links(latest_video['url'])
+    # 第二步：从视频页面提取所有包含"下载地址"的片段
+    print("\n正在从视频页面提取所有包含'下载地址'的片段...")
+    download_segments = extract_download_addresses(latest_video['url'])
     
-    if paste_segments:
-        print(f"\n找到 {len(paste_segments)} 个匹配片段:")
-        for i, segment in enumerate(paste_segments, 1):
+    if download_segments:
+        print(f"\n找到 {len(download_segments)} 个匹配片段:")
+        for i, segment in enumerate(download_segments, 1):
             print(f"\n片段 {i}:")
             print(segment)
+            
+            # 尝试从片段中提取URL
+            url_match = re.search(r'(https?://[^\s]+)', segment)
+            if url_match:
+                print(f"提取到的URL: {url_match.group(1)}")
     else:
-        print("\n没有找到任何https://paste.to/链接")
+        print("\n没有找到任何包含'下载地址'的片段")
