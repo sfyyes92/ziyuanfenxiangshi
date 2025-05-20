@@ -1,5 +1,6 @@
 import requests
 import re
+from datetime import datetime
 
 def extract_youtube_links(channel_url):
     headers = {
@@ -15,14 +16,15 @@ def extract_youtube_links(channel_url):
         return []
 
     # 匹配年月日格式（如：2023年10月15日）
-    date_pattern = re.compile(r'\d{4}年\d{1,2}月\d{1,2}日')
+    date_pattern = re.compile(r'(\d{4})年(\d{1,2})月(\d{1,2})日')
     
-    # 最终结果存储
     video_links = []
     
     # 查找所有日期出现的位置
     for date_match in date_pattern.finditer(html_content):
+        year, month, day = map(int, date_match.groups())
         date_str = date_match.group()
+        date_obj = datetime(year, month, day)
         date_end_pos = date_match.end()
         
         # 在日期后查找/watch?v=
@@ -39,9 +41,21 @@ def extract_youtube_links(channel_url):
         watch_part = html_content[watch_pos:quote_pos]
         full_url = f'https://www.youtube.com{watch_part}'
         
-        video_links.append((date_str, full_url))
+        video_links.append({
+            'date_str': date_str,
+            'date_obj': date_obj,
+            'url': full_url
+        })
     
     return video_links
+
+def find_latest_video(video_links):
+    if not video_links:
+        return None
+    
+    # 按日期从新到旧排序
+    sorted_videos = sorted(video_links, key=lambda x: x['date_obj'], reverse=True)
+    return sorted_videos[0]
 
 if __name__ == "__main__":
     channel_url = "https://www.youtube.com/@ZYFXS"
@@ -50,9 +64,20 @@ if __name__ == "__main__":
     videos = extract_youtube_links(channel_url)
     
     if videos:
-        print(f"找到 {len(videos)} 个视频:")
-        for i, (date_str, url) in enumerate(videos, 1):
-            print(f"{i}. 日期: {date_str}")
-            print(f"   链接: {url}")
+        print(f"找到 {len(videos)} 个日期视频链接")
+        
+        # 找出最新日期的视频
+        latest_video = find_latest_video(videos)
+        
+        print("\n最新日期的视频:")
+        print(f"日期: {latest_video['date_str']}")
+        print(f"链接: {latest_video['url']}")
+        
+        # 打印所有找到的日期和链接（按日期排序）
+        print("\n所有找到的视频（按日期排序）:")
+        sorted_videos = sorted(videos, key=lambda x: x['date_obj'], reverse=True)
+        for i, video in enumerate(sorted_videos, 1):
+            print(f"{i}. 日期: {video['date_str']}")
+            print(f"   链接: {video['url']}")
     else:
         print("没有找到符合条件的视频")
