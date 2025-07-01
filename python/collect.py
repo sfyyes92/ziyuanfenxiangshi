@@ -19,7 +19,7 @@ def get_youtube_content(url):
         return None
 
 def find_latest_video(channel_url):
-    """查找最新日期的视频"""
+    """查找最新日期的视频（保持不变）"""
     content = get_youtube_content(channel_url)
     if not content:
         return None
@@ -54,51 +54,53 @@ def find_latest_video(channel_url):
 
 def extract_paste_links(content):
     """
-    精确查找paste.to链接
-    根据实际源码格式进行针对性匹配
+    按照指定方法精确查找paste.to链接
+    搜索逻辑：
+    1. 找到"下载地址：https://paste.to/"
+    2. 向后查找，先遇到"..."就重新搜索
+    3. 先遇到"\n（密码在上方youtube视频中口述）"就提取两者间的内容
     """
-    print("正在精确查找paste.to链接...")
+    print("正在按照指定方法查找paste.to链接...")
     
-    # 方法1：匹配您提供的标准格式
-    pattern1 = re.compile(
-        r'下载地址：\s*(https?://paste\.to/[^\s<>"]+)',
-        re.IGNORECASE
-    )
+    # 定义关键字符串
+    start_marker = "下载地址：https://paste.to/"
+    ellipsis_marker = "..."
+    password_marker = "\n（密码在上方youtube视频中口述）"
     
-    # 方法2：匹配包含哈希值的paste.to链接
-    pattern2 = re.compile(
-        r'(https?://paste\.to/\?[a-f0-9]+#[^\s<>"]+)',
-        re.IGNORECASE
-    )
+    links = []
+    pos = 0
     
-    # 方法3：匹配包含"paste.to"的关键行
-    pattern3 = re.compile(
-        r'.*paste\.to.*?(https?://paste\.to/[^\s<>"]+)',
-        re.IGNORECASE
-    )
+    while pos < len(content):
+        # 查找起始标记
+        start_pos = content.find(start_marker, pos)
+        if start_pos == -1:
+            break
+        
+        # 从起始位置开始查找两个可能的结束标记
+        ellipsis_pos = content.find(ellipsis_marker, start_pos)
+        password_pos = content.find(password_marker, start_pos)
+        
+        # 判断哪个标记先出现
+        if password_pos != -1 and (ellipsis_pos == -1 or password_pos < ellipsis_pos):
+            # 找到密码标记，提取完整链接
+            link_end = password_pos
+            full_url = content[start_pos + len("下载地址："):link_end].strip()
+            links.append(full_url)
+            pos = password_pos + len(password_marker)
+        elif ellipsis_pos != -1:
+            # 找到省略号，跳过继续搜索
+            pos = ellipsis_pos + len(ellipsis_marker)
+        else:
+            # 两个标记都没找到，结束搜索
+            break
     
-    links = set()
-    
-    # 尝试各种匹配模式
-    for pattern in [pattern1, pattern2, pattern3]:
-        matches = pattern.finditer(content)
-        for match in matches:
-            full_url = match.group(1).strip()
-            if full_url.startswith('http'):
-                links.add(full_url)
-    
-    return sorted(links)
+    return links
 
 def search_paste_links(video_url):
     """在视频页面搜索paste.to链接"""
     content = get_youtube_content(video_url)
     if not content:
         return []
-    
-    # 保存原始内容供调试
-    with open('video_page_source.html', 'w', encoding='utf-8') as f:
-        f.write(content)
-    print("已保存页面源代码到 video_page_source.html")
     
     return extract_paste_links(content)
 
@@ -114,24 +116,15 @@ def main():
     print(f"\n找到最新视频: {latest_video['date_str']}")
     print(f"视频链接: {latest_video['url']}")
     
-    print("\n正在精确搜索paste.to链接...")
+    print("\n正在按照指定方法搜索paste.to链接...")
     links = search_paste_links(latest_video['url'])
     
     if links:
         print("\n找到的完整paste.to链接:")
         for i, link in enumerate(links, 1):
             print(f"{i}. {link}")
-            
-            # 尝试提取密码提示
-            password_hint = re.search(
-                r'密码[：:]\s*([^\s<]+)', 
-                content[content.find(link)-100:content.find(link)+100]
-            )
-            if password_hint:
-                print(f"   密码提示: {password_hint.group(1)}")
     else:
         print("未找到paste.to链接")
-        print("请检查 video_page_source.html 中的内容")
 
 if __name__ == "__main__":
     main()
