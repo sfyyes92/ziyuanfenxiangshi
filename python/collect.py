@@ -30,10 +30,10 @@ def find_dated_videos(channel_url):
         content_length = len(page_content)
         print(f"[调试] 页面内容长度: {content_length} 字符")
         
-        # 打印最后100个字符用于验证完整性
-        print("\n[内容验证] 页面内容最后100个字符:")
-        print(page_content[-100:])
-        print("\n")
+        # 输出完整内容到文件
+        with open('youtube_channel_content.txt', 'w', encoding='utf-8') as f:
+            f.write(page_content)
+        print("[信息] 已将完整页面内容保存到 youtube_channel_content.txt")
         
         # 查找所有日期格式的标题和对应的视频ID
         print("[调试] 正在搜索日期格式的视频...")
@@ -85,71 +85,28 @@ def find_dated_videos(channel_url):
         print(f"[错误] 处理过程中发生异常: {e}")
         return None
 
-def search_paste_links(video_url):
+def print_file_content(filename):
     """
-    在视频页面中搜索https://paste.to/链接并打印相关信息
+    打印文件全部内容
     
     参数:
-        video_url (str): YouTube视频URL
-        
-    返回:
-        tuple: (找到的链接数量, 页面内容长度)
+        filename (str): 要打印的文件名
     """
-    print(f"\n[调试] 开始处理视频页面: {video_url}")
-    
     try:
-        # 发送HTTP请求获取视频页面
-        print("[调试] 正在发送HTTP请求获取视频页面...")
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        response = requests.get(video_url, headers=headers)
-        response.raise_for_status()
-        print("[调试] 成功获取视频页面内容")
-        
-        # 将响应内容转换为文本
-        page_content = response.text
-        content_length = len(page_content)
-        print(f"[调试] 页面内容长度: {content_length} 字符")
-        
-        # 打印最后100个字符用于验证完整性
-        print("\n[内容验证] 页面内容最后100个字符:")
-        print(page_content[-100:])
-        print("\n")
-        
-        # 查找所有https://paste.to/链接
-        print("[调试] 正在搜索https://paste.to/链接...")
-        paste_pattern = re.compile(r'(https://paste\.to/[^\s"]+)')
-        matches = paste_pattern.finditer(page_content)
-        
-        found_count = 0
-        
-        for match in matches:
-            found_count += 1
-            paste_link = match.group(1)
-            start_pos = match.start()
-            end_pos = min(start_pos + len(paste_link) + 100, len(page_content))
-            context = page_content[start_pos:end_pos]
-            
-            print(f"\n[信息] 找到paste.to链接 #{found_count}:")
-            print(f"完整链接: {paste_link}")
-            print("链接及其后100字符内容:")
-            print(context)
-        
-        if found_count == 0:
-            print("[警告] 未找到任何https://paste.to/链接")
-        
-        return (found_count, content_length)
-        
-    except requests.RequestException as e:
-        print(f"[错误] 网络请求失败: {e}")
-        return (0, 0)
+        print(f"\n[信息] 开始打印文件内容: {filename}")
+        with open(filename, 'r', encoding='utf-8') as f:
+            content = f.read()
+            print("\n" + "="*50 + " 文件开始 " + "="*50)
+            print(content)
+            print("="*50 + " 文件结束 " + "="*50 + "\n")
+        print(f"[信息] 文件内容打印完成，长度: {len(content)} 字符")
+    except FileNotFoundError:
+        print(f"[错误] 文件未找到: {filename}")
     except Exception as e:
-        print(f"[错误] 处理过程中发生异常: {e}")
-        return (0, 0)
+        print(f"[错误] 读取文件失败: {e}")
 
 if __name__ == "__main__":
-    # 第一步：查找最新日期的视频
+    # 查找最新日期的视频
     channel_url = "https://www.youtube.com/@ZYFXS"
     dated_videos = find_dated_videos(channel_url)
     
@@ -159,18 +116,24 @@ if __name__ == "__main__":
         print(f"发布日期: {latest_video['date_str']}")
         print(f"视频链接: {latest_video['url']}")
         
-        # 第二步：在最新视频中搜索paste.to链接
-        print("\n[信息] 开始搜索视频中的paste.to链接...")
-        paste_count, content_length = search_paste_links(latest_video['url'])
-        
-        print(f"\n[总结]")
-        print(f"页面内容总长度: {content_length} 字符")
-        print(f"共找到 {paste_count} 个paste.to链接")
-        
-        if paste_count == 0 and content_length < 50000:
-            print("\n[警告] 获取的内容可能不完整，建议检查以下问题:")
-            print("1. 页面内容是否通过JavaScript动态加载")
-            print("2. 是否需要使用Selenium等工具获取完整渲染后的页面")
-            print("3. 是否触发了YouTube的反爬机制")
+        # 获取并保存视频页面内容
+        print("\n[信息] 正在获取最新视频页面内容...")
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(latest_video['url'], headers=headers)
+            response.raise_for_status()
+            
+            with open('youtube_video_content.txt', 'w', encoding='utf-8') as f:
+                f.write(response.text)
+            print("[信息] 已将视频页面内容保存到 youtube_video_content.txt")
+            print(f"[信息] 内容长度: {len(response.text)} 字符")
+            
+            # 打印文件内容
+            print_file_content('youtube_video_content.txt')
+            
+        except Exception as e:
+            print(f"[错误] 获取视频页面内容失败: {e}")
     else:
         print("未能找到符合条件的视频")
