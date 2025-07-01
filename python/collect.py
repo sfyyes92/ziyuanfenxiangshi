@@ -80,6 +80,20 @@ def extract_paste_link(content):
         ellipsis_pos = content.find(ellipsis_marker, link_start)
         password_pos = content.find(password_marker, link_start)
         
+        # ============= 新增调试代码开始 =============
+        # 打印关键位置附近的内容片段
+        debug_start = max(0, start_pos-50)  # 查看起始标记前50字符
+        debug_end = min(len(content), (password_pos if password_pos != -1 else ellipsis_pos if ellipsis_pos != -1 else start_pos) + 50)
+        print("\n==== 调试内容片段 ====")
+        print(f"当前位置: {start_pos}")
+        print(f"起始标记位置: {start_pos}-{start_pos+len(start_marker)}")
+        print(f"密码标记位置: {password_pos}")
+        print(f"省略号位置: {ellipsis_pos}")
+        print("内容预览:")
+        print(content[debug_start:debug_end])
+        print("=====================\n")
+        # ============= 新增调试代码结束 =============
+        
         # 判断哪个标记先出现
         if password_pos != -1 and (ellipsis_pos == -1 or password_pos < ellipsis_pos):
             # 找到密码标记，提取完整链接
