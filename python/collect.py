@@ -1,177 +1,98 @@
 import re
+import webbrowser
 from datetime import datetime
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
-import os
-import tempfile
+from webdriver_manager.chrome import ChromeDriverManager
 
-def setup_selenium():
+def setup_driver():
+    """配置Selenium Chrome驱动"""
     chrome_options = Options()
+    chrome_options.add_argument("--headless")  # 无头模式，不显示浏览器窗口
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920x1080")
-    
-    # 创建临时用户数据目录
-    temp_dir = tempfile.mkdtemp()
-    chrome_options.add_argument(f"--user-data-dir={temp_dir}")
-    
-    # 其他推荐配置
-    chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     
-    try:
-        driver = webdriver.Chrome(options=chrome_options)
-        return driver
-    except Exception as e:
-        print(f"浏览器初始化失败: {e}")
-        # 清理临时目录
-        try:
-            os.rmdir(temp_dir)
-        except:
-            pass
-        raise
+    # 自动下载并安装ChromeDriver
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    return driver
 
-def extract_youtube_links(driver, channel_url):
+def get_latest_date_video(channel_url, driver):
+    """获取最新日期的视频"""
     try:
         driver.get(channel_url)
+        
+        # 等待视频元素加载（可能需要根据实际情况调整等待时间和选择器）
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-grid-video-renderer"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, "a#video-title-link"))
         )
         
-        # 滚动加载所有视频
-        last_height = driver.execute_script("return document.documentElement.scrollHeight")
-        while True:
-            driver.execute_script("window.scrollTo(0, document.documentElement.scrollHeight);")
-            time.sleep(2)
-            new_height = driver.execute_script("return document.documentElement.scrollHeight")
-            if new_height == last_height:
-                break
-            last_height = new_height
+        # 获取所有视频元素
+        video_elements = driver.find_elements(By.CSS_SELECTOR, "a#video-title-link")
         
-        html_content = driver.page_source
+        date_pattern = re.compile(r'^(20\d{2}年[01]?\d月[0-3]?\d日)')
+        dated_videos = []
+        
+        for video in video_elements:
+            title = video.get_attribute("title").strip()
+            match = date_pattern.match(title)
+            if match:
+                date_str = match.group(1)
+                try:
+                    # 将中文日期转换为datetime对象
+                    date_obj = datetime.strptime(date_str, '%Y年%m月%d日')
+                    video_url = video.get_attribute("href")
+                    dated_videos.append((date_obj, title, video_url))
+                except ValueError:
+                    continue
+        
+        if not dated_videos:
+            print("没有找到以日期开头的视频")
+            return None
+        
+        # 按日期排序，最新的在前
+        dated_videos.sort(reverse=True, key=lambda x: x[0])
+        
+        return dated_videos[0]  # 返回最新日期的视频
+        
     except Exception as e:
-        print(f"访问频道页面出错: {e}")
+        print(f"发生错误: {e}")
         return None
 
-    date_pattern = re.compile(r'(\d{4})年(\d{1,2})月(\d{1,2})日')
-    video_links = []
+def main():
+    channel_url = "https://www.youtube.com/@ZYFXS"
     
-    for date_match in date_pattern.finditer(html_content):
-        year, month, day = map(int, date_match.groups())
-        date_str = date_match.group()
-        date_obj = datetime(year, month, day)
-        date_end_pos = date_match.end()
-        
-        watch_pos = html_content.find('/watch?v=', date_end_pos)
-        if watch_pos == -1:
-            continue
-        
-        quote_pos = html_content.find('"', watch_pos)
-        if quote_pos == -1:
-            continue
-        
-        watch_part = html_content[watch_pos:quote_pos]
-        full_url = f'https://www.youtube.com{watch_part}'
-        
-        video_links.append({
-            'date_str': date_str,
-            'date_obj': date_obj,
-            'url': full_url
-        })
+    print("正在启动浏览器...")
+    driver = setup_driver()
     
-    return video_links
-
-def find_latest_video(video_links):
-    if not video_links:
-        return None
-    return sorted(video_links, key=lambda x: x['date_obj'], reverse=True)[0]
-
-def get_page_source_with_selenium(driver, url):
     try:
-        driver.get(url)
-        # 等待页面基本加载
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
+        print(f"正在访问频道: {channel_url}")
+        latest_video = get_latest_date_video(channel_url, driver)
         
-        # 获取当前页面源代码
-        full_source = driver.page_source
-        return full_source
-        
-    except Exception as e:
-        print(f"获取页面源代码出错: {e}")
-        return None
-
-def extract_download_addresses_from_source(full_source):
-    if not full_source:
-        return None
-    
-    # 查找所有"下载地址"出现的位置
-    download_markers = [m.start() for m in re.finditer('下载地址', full_source)]
-    download_segments = []
-    
-    for marker_pos in download_markers:
-        # 提取标记位置后300个字符
-        segment = full_source[marker_pos:marker_pos+300]
-        download_segments.append(segment)
-    
-    return download_segments
+        if latest_video:
+            date_obj, title, url = latest_video
+            print("\n找到最新日期的视频:")
+            print(f"日期: {date_obj.strftime('%Y年%m月%d日')}")
+            print(f"标题: {title}")
+            print(f"URL: {url}")
+            
+            # 询问用户是否要打开视频
+            choice = input("\n是否要在浏览器中打开此视频？(y/n): ").lower()
+            if choice == 'y':
+                webbrowser.open(url)
+        else:
+            print("未能找到符合条件的视频")
+            
+    finally:
+        print("\n关闭浏览器...")
+        driver.quit()
 
 if __name__ == "__main__":
-    print("初始化浏览器...")
-    driver = None
-    try:
-        driver = setup_selenium()
-        
-        channel_url = "https://www.youtube.com/@ZYFXS"
-        print(f"正在处理频道: {channel_url}")
-        
-        # 第一步：获取频道中最新的视频
-        videos = extract_youtube_links(driver, channel_url)
-        
-        if not videos:
-            print("没有找到任何日期视频")
-            exit()
-            
-        latest_video = find_latest_video(videos)
-        print(f"\n找到最新视频: {latest_video['date_str']}")
-        print(f"视频链接: {latest_video['url']}")
-        
-        # 第二步：获取完整页面源代码
-        print("\n正在获取完整页面源代码...")
-        full_source = get_page_source_with_selenium(driver, latest_video['url'])
-        
-        if full_source:
-            # 保存源代码到文件供检查
-            with open("full_page_source.txt", "w", encoding="utf-8") as f:
-                f.write(full_source)
-            print("完整页面源代码已保存到 full_page_source.txt")
-            
-            # 第三步：从源代码中提取下载地址
-            print("\n正在搜索下载地址...")
-            download_segments = extract_download_addresses_from_source(full_source)
-            
-            if download_segments:
-                print(f"\n找到 {len(download_segments)} 个匹配片段:")
-                for i, segment in enumerate(download_segments, 1):
-                    print(f"\n片段 {i}:")
-                    print(segment)
-                    
-                    # 尝试提取URL
-                    url_match = re.search(r'(https?://[^\s<>"]+)', segment)
-                    if url_match:
-                        print(f"提取到的URL: {url_match.group(1)}")
-            else:
-                print("\n没有找到任何包含'下载地址'的片段")
-        else:
-            print("\n无法获取完整页面源代码")
-            
-    except Exception as e:
-        print(f"程序运行出错: {e}")
-    finally:
-        if driver:
-            driver.quit()
+    main()
