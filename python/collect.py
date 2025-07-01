@@ -1,7 +1,7 @@
 import requests
 import re
 from datetime import datetime
-from urllib.parse import urljoin, unquote, parse_qs
+from urllib.parse import urljoin, unquote
 
 def get_youtube_content(url):
     """获取YouTube页面内容"""
@@ -50,47 +50,30 @@ def find_latest_video(channel_url):
     videos.sort(key=lambda x: x['date_obj'], reverse=True)
     return videos[0]
 
-def extract_paste_from_redirect(redirect_url):
-    """从YouTube重定向URL中提取paste.to真实链接"""
-    try:
-        # 解析查询参数
-        params = parse_qs(redirect_url.split('?', 1)[1])
-        encoded_url = params.get('q', [''])[0]
-        
-        if not encoded_url:
-            return None
-            
-        # URL解码
-        decoded_url = unquote(encoded_url)
-        
-        # 提取完整的paste.to链接（去除可能的后续参数）
-        paste_match = re.search(r'(https?://paste\.to/[^\s&]+)', decoded_url)
-        return paste_match.group(1) if paste_match else None
-    except Exception:
-        return None
-
-def find_all_paste_links(content):
-    """综合查找所有paste.to链接（直接+重定向）"""
-    links = set()
+def extract_encoded_paste_links(content):
+    """
+    精确查找编码后的paste.to链接
+    搜索方法：
+    1. 查找"https%3A%2F%2Fpaste.to"字符串
+    2. 从该位置开始提取，直到遇到反斜杠或空格
+    """
+    print("正在搜索编码后的paste.to链接...")
+    links = []
     
-    # 方法1：直接查找显式链接
-    direct_matches = re.finditer(
-        r'(?:下载地址：|地址：)\s*(https?://paste\.to/[^\s<"]+)', 
-        content
-    )
-    for match in direct_matches:
-        links.add(match.group(1).strip())
+    # 查找所有编码后的paste.to链接
+    matches = re.finditer(r'https%3A%2F%2Fpaste\.to[^\\\s]+', content)
     
-    # 方法2：从重定向URL中提取
-    redirect_matches = re.finditer(
-        r'https://www\.youtube\.com/redirect\?[^\s"<]+', 
-        content
-    )
-    for match in redirect_matches:
-        if paste_link := extract_paste_from_redirect(match.group()):
-            links.add(paste_link)
+    for match in matches:
+        encoded_url = match.group()
+        try:
+            # URL解码
+            decoded_url = unquote(encoded_url)
+            links.append(decoded_url)
+            print(f"找到编码链接: {encoded_url} -> 解码后: {decoded_url}")
+        except Exception as e:
+            print(f"解码失败: {encoded_url}, 错误: {str(e)}")
     
-    return sorted(links)
+    return links
 
 def main():
     channel_url = "https://www.youtube.com/@ZYFXS"
@@ -110,8 +93,8 @@ def main():
         print("无法获取页面内容")
         return
     
-    print("正在搜索paste.to链接...")
-    paste_links = find_all_paste_links(content)
+    print("正在精确搜索编码后的paste.to链接...")
+    paste_links = extract_encoded_paste_links(content)
     
     if paste_links:
         print("\n找到的paste.to链接:")
