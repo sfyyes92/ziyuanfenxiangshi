@@ -13,7 +13,6 @@ def find_dated_videos(channel_url):
     返回:
         list: 包含所有日期视频信息的列表，按日期排序
     """
-    
     print(f"[调试] 开始处理频道: {channel_url}")
     
     try:
@@ -80,17 +79,75 @@ def find_dated_videos(channel_url):
         print(f"[错误] 处理过程中发生异常: {e}")
         return None
 
+def search_paste_links(video_url):
+    """
+    在视频页面中搜索https://paste.to/链接并打印相关信息
+    
+    参数:
+        video_url (str): YouTube视频URL
+    """
+    print(f"\n[调试] 开始处理视频页面: {video_url}")
+    
+    try:
+        # 发送HTTP请求获取视频页面
+        print("[调试] 正在发送HTTP请求获取视频页面...")
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(video_url, headers=headers)
+        response.raise_for_status()
+        print("[调试] 成功获取视频页面内容")
+        
+        # 将响应内容转换为文本
+        page_content = response.text
+        print(f"[调试] 页面内容长度: {len(page_content)} 字符")
+        
+        # 查找所有https://paste.to/链接
+        print("[调试] 正在搜索https://paste.to/链接...")
+        paste_pattern = re.compile(r'(https://paste\.to/[^\s"]+)')
+        matches = paste_pattern.finditer(page_content)
+        
+        found_count = 0
+        
+        for match in matches:
+            found_count += 1
+            paste_link = match.group(1)
+            start_pos = match.start()
+            end_pos = min(start_pos + len(paste_link) + 100, len(page_content))
+            context = page_content[start_pos:end_pos]
+            
+            print(f"\n[信息] 找到paste.to链接 #{found_count}:")
+            print(f"完整链接: {paste_link}")
+            print("链接及其后100字符内容:")
+            print(context)
+        
+        if found_count == 0:
+            print("[警告] 未找到任何https://paste.to/链接")
+        
+        return found_count
+        
+    except requests.RequestException as e:
+        print(f"[错误] 网络请求失败: {e}")
+        return 0
+    except Exception as e:
+        print(f"[错误] 处理过程中发生异常: {e}")
+        return 0
+
 if __name__ == "__main__":
+    # 第一步：查找最新日期的视频
     channel_url = "https://www.youtube.com/@ZYFXS"
     dated_videos = find_dated_videos(channel_url)
     
     if dated_videos:
         latest_video = dated_videos[0]
-        print("\n最终结果:")
-        print(f"最新视频日期: {latest_video['date_str']}")
+        print("\n[信息] 最新视频信息:")
+        print(f"发布日期: {latest_video['date_str']}")
         print(f"视频链接: {latest_video['url']}")
         
-        # 这里可以添加代码来实际访问该视频
-        # 例如使用webbrowser.open(latest_video['url'])
+        # 第二步：在最新视频中搜索paste.to链接
+        print("\n[信息] 开始搜索视频中的paste.to链接...")
+        paste_count = search_paste_links(latest_video['url'])
+        
+        print(f"\n[总结] 共找到 {paste_count} 个paste.to链接")
     else:
         print("未能找到符合条件的视频")
