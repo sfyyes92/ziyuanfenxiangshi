@@ -27,7 +27,13 @@ def find_dated_videos(channel_url):
         
         # 将响应内容转换为文本
         page_content = response.text
-        print(f"[调试] 页面内容长度: {len(page_content)} 字符")
+        content_length = len(page_content)
+        print(f"[调试] 页面内容长度: {content_length} 字符")
+        
+        # 打印最后100个字符用于验证完整性
+        print("\n[内容验证] 页面内容最后100个字符:")
+        print(page_content[-100:])
+        print("\n")
         
         # 查找所有日期格式的标题和对应的视频ID
         print("[调试] 正在搜索日期格式的视频...")
@@ -85,6 +91,9 @@ def search_paste_links(video_url):
     
     参数:
         video_url (str): YouTube视频URL
+        
+    返回:
+        tuple: (找到的链接数量, 页面内容长度)
     """
     print(f"\n[调试] 开始处理视频页面: {video_url}")
     
@@ -100,7 +109,13 @@ def search_paste_links(video_url):
         
         # 将响应内容转换为文本
         page_content = response.text
-        print(f"[调试] 页面内容长度: {len(page_content)} 字符")
+        content_length = len(page_content)
+        print(f"[调试] 页面内容长度: {content_length} 字符")
+        
+        # 打印最后100个字符用于验证完整性
+        print("\n[内容验证] 页面内容最后100个字符:")
+        print(page_content[-100:])
+        print("\n")
         
         # 查找所有https://paste.to/链接
         print("[调试] 正在搜索https://paste.to/链接...")
@@ -124,14 +139,14 @@ def search_paste_links(video_url):
         if found_count == 0:
             print("[警告] 未找到任何https://paste.to/链接")
         
-        return found_count
+        return (found_count, content_length)
         
     except requests.RequestException as e:
         print(f"[错误] 网络请求失败: {e}")
-        return 0
+        return (0, 0)
     except Exception as e:
         print(f"[错误] 处理过程中发生异常: {e}")
-        return 0
+        return (0, 0)
 
 if __name__ == "__main__":
     # 第一步：查找最新日期的视频
@@ -146,8 +161,16 @@ if __name__ == "__main__":
         
         # 第二步：在最新视频中搜索paste.to链接
         print("\n[信息] 开始搜索视频中的paste.to链接...")
-        paste_count = search_paste_links(latest_video['url'])
+        paste_count, content_length = search_paste_links(latest_video['url'])
         
-        print(f"\n[总结] 共找到 {paste_count} 个paste.to链接")
+        print(f"\n[总结]")
+        print(f"页面内容总长度: {content_length} 字符")
+        print(f"共找到 {paste_count} 个paste.to链接")
+        
+        if paste_count == 0 and content_length < 50000:
+            print("\n[警告] 获取的内容可能不完整，建议检查以下问题:")
+            print("1. 页面内容是否通过JavaScript动态加载")
+            print("2. 是否需要使用Selenium等工具获取完整渲染后的页面")
+            print("3. 是否触发了YouTube的反爬机制")
     else:
         print("未能找到符合条件的视频")
