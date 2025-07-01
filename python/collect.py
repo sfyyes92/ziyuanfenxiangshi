@@ -85,25 +85,54 @@ def find_dated_videos(channel_url):
         print(f"[错误] 处理过程中发生异常: {e}")
         return None
 
-def print_file_content(filename):
+def search_paste_links_in_file(filename):
     """
-    打印文件全部内容
+    在文件中搜索paste.to链接并打印每个链接及其后100个字符
     
     参数:
-        filename (str): 要打印的文件名
+        filename (str): 要搜索的文件名
+        
+    返回:
+        int: 找到的链接数量
     """
     try:
-        print(f"\n[信息] 开始打印文件内容: {filename}")
+        print(f"\n[信息] 正在在文件 {filename} 中搜索paste.to链接...")
         with open(filename, 'r', encoding='utf-8') as f:
             content = f.read()
-            print("\n" + "="*50 + " 文件开始 " + "="*50)
-            print(content)
-            print("="*50 + " 文件结束 " + "="*50 + "\n")
-        print(f"[信息] 文件内容打印完成，长度: {len(content)} 字符")
+        
+        # 匹配所有paste.to链接
+        paste_pattern = re.compile(r'(https?://paste\.to/[^\s"<]+)')
+        matches = paste_pattern.finditer(content)
+        
+        found_count = 0
+        
+        for match in matches:
+            found_count += 1
+            paste_link = match.group(1)
+            start_pos = match.start()
+            end_pos = min(start_pos + len(paste_link) + 100, len(content))
+            context = content[start_pos:end_pos]
+            
+            print(f"\n[找到链接 #{found_count}]")
+            print(f"完整链接: {paste_link}")
+            print("链接及其后100字符内容:")
+            print("-" * 50)
+            print(context)
+            print("-" * 50)
+        
+        if found_count == 0:
+            print("[警告] 未找到任何paste.to链接")
+        else:
+            print(f"\n[信息] 共找到 {found_count} 个paste.to链接")
+        
+        return found_count
+        
     except FileNotFoundError:
         print(f"[错误] 文件未找到: {filename}")
+        return 0
     except Exception as e:
-        print(f"[错误] 读取文件失败: {e}")
+        print(f"[错误] 搜索链接失败: {e}")
+        return 0
 
 if __name__ == "__main__":
     # 查找最新日期的视频
@@ -130,8 +159,8 @@ if __name__ == "__main__":
             print("[信息] 已将视频页面内容保存到 youtube_video_content.txt")
             print(f"[信息] 内容长度: {len(response.text)} 字符")
             
-            # 打印文件内容
-            print_file_content('youtube_video_content.txt')
+            # 在文件中搜索paste.to链接
+            search_paste_links_in_file('youtube_video_content.txt')
             
         except Exception as e:
             print(f"[错误] 获取视频页面内容失败: {e}")
