@@ -1,14 +1,12 @@
 import requests
 import re
-from datetime import datetime
-from urllib.parse import urljoin, unquote
-import json
 import base64
 import zlib
+import json
+from urllib.parse import urljoin, unquote
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Hash import SHA256
-from tqdm import tqdm  # 用于显示进度条
 
 def get_youtube_content(url):
     """获取YouTube页面内容"""
@@ -73,129 +71,89 @@ def extract_encoded_paste_links(content):
     
     return links
 
-def parse_paste_jsonld(json_data):
-    """根据JSON-LD规范解析paste数据"""
-    parsed = {
-        'metadata': {},
-        'encryption': {},
-        'content': {}
-    }
-    
-    parsed['status'] = json_data.get('status')
-    parsed['id'] = json_data.get('id')
-    parsed['url'] = json_data.get('url')
-    parsed['version'] = json_data.get('v')
-    
-    if 'adata' in json_data:
-        parsed['encryption']['adata'] = json_data['adata']
-        if isinstance(json_data['adata'], list) and len(json_data['adata']) > 0:
-            if isinstance(json_data['adata'][0], list):
-                parsed['encryption'].update({
-                    'iv': json_data['adata'][0][0],
-                    'salt': json_data['adata'][0][1],
-                    'iterations': json_data['adata'][0][2],
-                    'key_size': json_data['adata'][0][3],
-                    'tag_size': json_data['adata'][0][4],
-                    'algorithm': json_data['adata'][0][5],
-                    'mode': json_data['adata'][0][6],
-                    'compression': json_data['adata'][0][7]
-                })
-    
-    if 'ct' in json_data:
-        parsed['content']['cipher_text'] = json_data['ct']
-    
-    if 'meta' in json_data:
-        parsed['metadata'] = json_data['meta']
-    
-    if 'comments' in json_data:
-        parsed['comments'] = {
-            'count': json_data.get('comment_count', 0),
-            'offset': json_data.get('comment_offset', 0),
-            'list': json_data['comments']
-        }
-    
-    return parsed
-
-def get_paste_jsonld(paste_url):
-    """获取并解析paste.to的JSON-LD数据"""
+def get_paste_data(paste_url):
+    """获取paste.to的JSON数据"""
     try:
         paste_id = paste_url.split('?')[-1].split('#')[0]
         api_url = f"https://paste.to/?{paste_id}&json=1"
         
         headers = {
             'X-Requested-With': 'JSONHttpRequest',
-            'Accept': 'application/ld+json, application/json',
+            'Accept': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
         print(f"\n正在请求API: {api_url}")
         response = requests.get(api_url, headers=headers, timeout=10)
         response.raise_for_status()
-        
-        json_data = response.json()
-        return parse_paste_jsonld(json_data)
+        return response.json()
         
     except Exception as e:
-        print(f"获取paste.to JSON-LD数据失败: {str(e)}")
+        print(f"获取paste.to数据失败: {str(e)}")
         return None
 
-def brute_force_decrypt(paste_data):
-    """暴力破解4位数字密码"""
-    if not paste_data.get('content') or not paste_data.get('encryption'):
-        print("缺少解密所需的数据")
-        return None
-    
-    ciphertext = base64.b64decode(paste_data['content'].get('cipher_text', ''))
-    iv = base64.b64decode(paste_data['encryption'].get('iv', ''))
-    salt = base64.b64decode(paste_data['encryption'].get('salt', ''))
-    iterations = paste_data['encryption'].get('iterations', 100000)
-    compression = paste_data['encryption'].get('compression', 'zlib')
-    
-    print("\n开始暴力破解4位数字密码...")
-    
-    # 生成所有4位数字组合 (0000-9999)
-    passwords = [f"{i:04d}" for i in range(10000)]
-    
-    for password in tqdm(passwords, desc="尝试密码"):
-        try:
-            # 派生密钥
-            key = PBKDF2(
-                password.encode('utf-8'),
-                salt,
-                dkLen=32,  # 256-bit
-                count=iterations,
-                hmac_hash_module=SHA256
-            )
-            
-            # 解密
-            cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
-            decrypted = cipher.decrypt(ciphertext)
-            
-            # 处理压缩
-            if compression == 'zlib':
-                try:
-                    plaintext = zlib.decompress(decrypted).decode('utf-8')
-                    return password, plaintext
-                except zlib.error:
-                    pass
-            
-            # 尝试直接解码
+def decrypt_paste(paste_data, password):
+    """解密paste.to内容"""
+    try:
+        # 提取加密参数
+        ciphertext = base64.b64decode(paste_data['ct'])
+        adata = paste_data['adata']
+        
+        # 从adata中提取参数
+        iv = base64.b64decode(adata[0][0])
+        salt = base64.b64decode(adata[0][1])
+        iterations = adata[0][2]
+        key_size = adata[0][3] // 8
+        tag_size = adata[0][4] // 8
+        algorithm = adata[0][5]
+        mode = adata[0][6]
+        compression = adata[0][7]
+        
+        # 派生密钥
+        key = PBKDF2(
+            password.encode('utf-8'),
+            salt,
+            dkLen=key_size,
+            count=iterations,
+            hmac_hash_module=SHA256
+        )
+        
+        # 分离密文和认证标签（GCM模式）
+        tag = ciphertext[-tag_size:]
+        ciphertext = ciphertext[:-tag_size]
+        
+        # 解密
+        cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
+        cipher.update(b'')  # 空adata
+        decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+        
+        # 处理压缩
+        if compression == 'zlib':
             try:
-                plaintext = decrypted.decode('utf-8')
-                if len(plaintext) > 10:  # 简单验证解密结果是否合理
-                    return password, plaintext
-            except UnicodeDecodeError:
-                continue
-                
-        except Exception:
-            continue
-    
-    return None, None
+                return zlib.decompress(decrypted).decode('utf-8')
+            except zlib.error:
+                pass
+        
+        # 尝试直接解码
+        try:
+            return decrypted.decode('utf-8')
+        except UnicodeDecodeError:
+            return None
+            
+    except Exception as e:
+        print(f"解密失败: {str(e)}")
+        return None
 
 def main():
+    # 配置参数
     channel_url = "https://www.youtube.com/@ZYFXS"
+    known_password = "1010"
     
-    print("正在查找最新视频...")
+    print("="*50)
+    print("开始获取YouTube频道最新视频...")
+    print("="*50)
+    
+    # 1. 获取最新视频
     latest_video = find_latest_video(channel_url)
     if not latest_video:
         print("未找到符合条件的视频")
@@ -204,50 +162,47 @@ def main():
     print(f"\n找到最新视频: {latest_video['date_str']}")
     print(f"视频链接: {latest_video['url']}")
     
+    # 2. 获取视频内容
     print("\n正在获取视频页面内容...")
     content = get_youtube_content(latest_video['url'])
     if not content:
         print("无法获取页面内容")
         return
     
-    print("正在精确搜索编码后的paste.to链接...")
+    # 3. 提取paste.to链接
+    print("\n正在搜索编码后的paste.to链接...")
     paste_links = extract_encoded_paste_links(content)
     
     if not paste_links:
         print("\n未找到paste.to链接")
         return
     
-    print("\n找到的paste.to链接:")
-    for i, link in enumerate(paste_links, 1):
-        print(f"{i}. {link}")
-    
+    # 4. 处理第一个找到的链接
     first_paste = paste_links[0]
-    print(f"\n正在处理第一个链接: {first_paste}")
+    print(f"\n正在处理链接: {first_paste}")
     
-    paste_data = get_paste_jsonld(first_paste)
-    if paste_data:
-        print("\n解析后的paste数据:")
-        print(json.dumps(paste_data, indent=2, ensure_ascii=False))
-        
-        print("\n加密参数详情:")
-        print(f"IV: {paste_data['encryption'].get('iv')}")
-        print(f"Salt: {paste_data['encryption'].get('salt')}")
-        print(f"迭代次数: {paste_data['encryption'].get('iterations')}")
-        print(f"算法: {paste_data['encryption'].get('algorithm')}-{paste_data['encryption'].get('mode')}")
-        print(f"压缩: {paste_data['encryption'].get('compression')}")
-        
-        # 开始暴力破解
-        password, plaintext = brute_force_decrypt(paste_data)
-        
-        if password and plaintext:
-            print(f"\n破解成功! 密码: {password}")
-            print("\n解密内容:")
-            print(plaintext)
-        else:
-            print("\n未能破解密码")
-    else:
+    # 5. 获取paste数据
+    paste_data = get_paste_data(first_paste)
+    if not paste_data:
         print("\n未能获取paste数据")
+        return
+    
+    print("\n获取到的paste数据:")
+    print(json.dumps(paste_data, indent=2, ensure_ascii=False))
+    
+    # 6. 使用已知密码解密
+    print(f"\n尝试使用密码 '{known_password}' 解密...")
+    plaintext = decrypt_paste(paste_data, known_password)
+    
+    if plaintext:
+        print("\n" + "="*50)
+        print("解密成功！内容如下:")
+        print("="*50)
+        print(plaintext)
+    else:
+        print("\n解密失败，请检查密码或加密参数")
 
 if __name__ == "__main__":
-    # 安装必要库: pip install requests pycryptodome tqdm
+    # 安装必要库: pip install requests pycryptodome
+    from datetime import datetime
     main()
