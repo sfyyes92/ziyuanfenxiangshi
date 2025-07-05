@@ -24,7 +24,6 @@ def find_latest_video(channel_url):
     if not content:
         return None
 
-    # 匹配日期格式的视频
     date_pattern = re.compile(r'(\d{4}年\d{1,2}月\d{1,2}日).*?"url":"(/watch\?v=[^"]+)"')
     matches = date_pattern.finditer(content)
     
@@ -47,7 +46,6 @@ def find_latest_video(channel_url):
     if not videos:
         return None
     
-    # 按日期排序获取最新视频
     videos.sort(key=lambda x: x['date_obj'], reverse=True)
     return videos[0]
 
@@ -56,13 +54,11 @@ def extract_encoded_paste_links(content):
     print("正在搜索编码后的paste.to链接...")
     links = []
     
-    # 查找所有编码后的paste.to链接
     matches = re.finditer(r'https%3A%2F%2Fpaste\.to[^\\\s]+', content)
     
     for match in matches:
         encoded_url = match.group()
         try:
-            # URL解码
             decoded_url = unquote(encoded_url)
             links.append(decoded_url)
             print(f"找到编码链接: {encoded_url} -> 解码后: {decoded_url}")
@@ -71,19 +67,63 @@ def extract_encoded_paste_links(content):
     
     return links
 
-def get_paste_json(paste_url):
-    """获取paste.to的JSON数据"""
+def parse_paste_jsonld(json_data):
+    """根据JSON-LD规范解析paste数据"""
+    parsed = {
+        'metadata': {},
+        'encryption': {},
+        'content': {}
+    }
+    
+    # 基础字段
+    parsed['status'] = json_data.get('status')
+    parsed['id'] = json_data.get('id')
+    parsed['url'] = json_data.get('url')
+    parsed['version'] = json_data.get('v')
+    
+    # 加密数据
+    if 'adata' in json_data:
+        parsed['encryption']['adata'] = json_data['adata']
+        if isinstance(json_data['adata'], list) and len(json_data['adata']) > 0:
+            if isinstance(json_data['adata'][0], list):
+                parsed['encryption'].update({
+                    'iv': json_data['adata'][0][0],
+                    'salt': json_data['adata'][0][1],
+                    'iterations': json_data['adata'][0][2],
+                    'key_size': json_data['adata'][0][3],
+                    'tag_size': json_data['adata'][0][4],
+                    'algorithm': json_data['adata'][0][5],
+                    'mode': json_data['adata'][0][6],
+                    'compression': json_data['adata'][0][7]
+                })
+    
+    # 密文
+    if 'ct' in json_data:
+        parsed['content']['cipher_text'] = json_data['ct']
+    
+    # 元数据
+    if 'meta' in json_data:
+        parsed['metadata'] = json_data['meta']
+    
+    # 评论信息
+    if 'comments' in json_data:
+        parsed['comments'] = {
+            'count': json_data.get('comment_count', 0),
+            'offset': json_data.get('comment_offset', 0),
+            'list': json_data['comments']
+        }
+    
+    return parsed
+
+def get_paste_jsonld(paste_url):
+    """获取并解析paste.to的JSON-LD数据"""
     try:
-        # 提取paste ID
         paste_id = paste_url.split('?')[-1].split('#')[0]
-        
-        # 构造API请求URL
         api_url = f"https://paste.to/?{paste_id}&json=1"
         
-        # 添加必要的headers
         headers = {
             'X-Requested-With': 'JSONHttpRequest',
-            'Accept': 'application/json',
+            'Accept': 'application/ld+json, application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
@@ -91,12 +131,11 @@ def get_paste_json(paste_url):
         response = requests.get(api_url, headers=headers, timeout=10)
         response.raise_for_status()
         
-        # 解析JSON响应
         json_data = response.json()
-        return json_data
+        return parse_paste_jsonld(json_data)
         
     except Exception as e:
-        print(f"获取paste.to JSON数据失败: {str(e)}")
+        print(f"获取paste.to JSON-LD数据失败: {str(e)}")
         return None
 
 def main():
@@ -128,24 +167,30 @@ def main():
     for i, link in enumerate(paste_links, 1):
         print(f"{i}. {link}")
     
-    # 获取第一个paste.to链接的JSON数据
     first_paste = paste_links[0]
     print(f"\n正在处理第一个链接: {first_paste}")
     
-    json_data = get_paste_json(first_paste)
-    if json_data:
-        print("\n成功获取JSON数据:")
-        print(json.dumps(json_data, indent=2, ensure_ascii=False))
+    paste_data = get_paste_jsonld(first_paste)
+    if paste_data:
+        print("\n解析后的paste数据:")
+        print(json.dumps(paste_data, indent=2, ensure_ascii=False))
         
-        # 提取关键信息
-        print("\n关键信息:")
-        print(f"状态: {json_data.get('status')}")
-        print(f"ID: {json_data.get('id')}")
-        print(f"URL: {json_data.get('url')}")
-        print(f"版本: {json_data.get('v')}")
-        print(f"加密参数: {json_data.get('adata')}")
+        print("\n加密参数详情:")
+        print(f"IV: {paste_data['encryption'].get('iv')}")
+        print(f"Salt: {paste_data['encryption'].get('salt')}")
+        print(f"迭代次数: {paste_data['encryption'].get('iterations')}")
+        print(f"算法: {paste_data['encryption'].get('algorithm')}-{paste_data['encryption'].get('mode')}")
+        print(f"压缩: {paste_data['encryption'].get('compression')}")
+        
+        print("\n内容信息:")
+        print(f"密文长度: {len(paste_data['content'].get('cipher_text', '')) if 'cipher_text' in paste_data['content'] else 'N/A'}")
+        
+        if 'metadata' in paste_data and paste_data['metadata']:
+            print("\n元数据:")
+            for k, v in paste_data['metadata'].items():
+                print(f"{k}: {v}")
     else:
-        print("\n未能获取JSON数据")
+        print("\n未能获取paste数据")
 
 if __name__ == "__main__":
     main()
