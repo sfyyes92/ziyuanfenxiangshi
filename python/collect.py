@@ -17,6 +17,20 @@ def get_youtube_content(url):
         print(f"获取内容失败: {str(e)}")
         return None
 
+def get_paste_content(url):
+    """获取paste.to页面内容"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9'
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        print(f"获取paste.to内容失败: {str(e)}")
+        return None
+
 def find_latest_video(channel_url):
     """查找最新日期的视频"""
     content = get_youtube_content(channel_url)
@@ -100,6 +114,19 @@ def main():
         print("\n找到的paste.to链接:")
         for i, link in enumerate(paste_links, 1):
             print(f"{i}. {link}")
+        
+        # 访问第一个找到的paste.to链接
+        first_paste_link = paste_links[0]
+        print(f"\n正在访问第一个paste.to链接: {first_paste_link}")
+        paste_content = get_paste_content(first_paste_link)
+        
+        if paste_content:
+            print("\npaste.to页面内容:")
+            print("-" * 50)
+            print(paste_content)
+            print("-" * 50)
+        else:
+            print("\n无法获取paste.to页面内容")
     else:
         print("\n未找到paste.to链接")
 
