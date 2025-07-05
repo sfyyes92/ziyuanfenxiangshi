@@ -2,6 +2,7 @@ import requests
 import re
 from datetime import datetime
 from urllib.parse import urljoin, unquote
+import json
 
 def get_youtube_content(url):
     """获取YouTube页面内容"""
@@ -51,12 +52,7 @@ def find_latest_video(channel_url):
     return videos[0]
 
 def extract_encoded_paste_links(content):
-    """
-    精确查找编码后的paste.to链接
-    搜索方法：
-    1. 查找"https%3A%2F%2Fpaste.to"字符串
-    2. 从该位置开始提取，直到遇到反斜杠或空格
-    """
+    """精确查找编码后的paste.to链接"""
     print("正在搜索编码后的paste.to链接...")
     links = []
     
@@ -74,6 +70,34 @@ def extract_encoded_paste_links(content):
             print(f"解码失败: {encoded_url}, 错误: {str(e)}")
     
     return links
+
+def get_paste_json(paste_url):
+    """获取paste.to的JSON数据"""
+    try:
+        # 提取paste ID
+        paste_id = paste_url.split('?')[-1].split('#')[0]
+        
+        # 构造API请求URL
+        api_url = f"https://paste.to/?{paste_id}&json=1"
+        
+        # 添加必要的headers
+        headers = {
+            'X-Requested-With': 'JSONHttpRequest',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        print(f"\n正在请求API: {api_url}")
+        response = requests.get(api_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # 解析JSON响应
+        json_data = response.json()
+        return json_data
+        
+    except Exception as e:
+        print(f"获取paste.to JSON数据失败: {str(e)}")
+        return None
 
 def main():
     channel_url = "https://www.youtube.com/@ZYFXS"
@@ -96,12 +120,32 @@ def main():
     print("正在精确搜索编码后的paste.to链接...")
     paste_links = extract_encoded_paste_links(content)
     
-    if paste_links:
-        print("\n找到的paste.to链接:")
-        for i, link in enumerate(paste_links, 1):
-            print(f"{i}. {link}")
-    else:
+    if not paste_links:
         print("\n未找到paste.to链接")
+        return
+    
+    print("\n找到的paste.to链接:")
+    for i, link in enumerate(paste_links, 1):
+        print(f"{i}. {link}")
+    
+    # 获取第一个paste.to链接的JSON数据
+    first_paste = paste_links[0]
+    print(f"\n正在处理第一个链接: {first_paste}")
+    
+    json_data = get_paste_json(first_paste)
+    if json_data:
+        print("\n成功获取JSON数据:")
+        print(json.dumps(json_data, indent=2, ensure_ascii=False))
+        
+        # 提取关键信息
+        print("\n关键信息:")
+        print(f"状态: {json_data.get('status')}")
+        print(f"ID: {json_data.get('id')}")
+        print(f"URL: {json_data.get('url')}")
+        print(f"版本: {json_data.get('v')}")
+        print(f"加密参数: {json_data.get('adata')}")
+    else:
+        print("\n未能获取JSON数据")
 
 if __name__ == "__main__":
     main()
