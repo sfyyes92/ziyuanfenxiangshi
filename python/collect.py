@@ -4,6 +4,7 @@ from datetime import datetime
 from urllib.parse import urljoin, unquote
 from itertools import product
 import time
+import json
 
 def get_youtube_content(url):
     """获取YouTube页面内容"""
@@ -19,30 +20,55 @@ def get_youtube_content(url):
         print(f"获取内容失败: {str(e)}")
         return None
 
-def get_paste_content(url, password=None):
-    """获取paste.to页面内容"""
+def check_password_protected(content):
+    """检查页面是否需要密码"""
+    return 'password-protected' in content.lower() or '请输入这份粘贴内容的密码' in content
+
+def decrypt_paste_content(url, password):
+    """使用密码解密paste.to内容"""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept-Language': 'zh-CN,zh;q=0.9'
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        'X-Requested-With': 'XMLHttpRequest'
     }
     
     try:
-        if password:
-            # 如果有密码，使用POST方法提交密码
-            data = {'password': password}
-            response = requests.post(url, headers=headers, data=data, timeout=15)
-        else:
-            # 如果没有密码，直接GET访问
-            response = requests.get(url, headers=headers, timeout=15)
-        
+        # 首先获取页面以获取token
+        session = requests.Session()
+        response = session.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         
-        # 检查页面是否返回密码输入表单
-        if 'password-protected' in response.text.lower():
-            return None  # 需要密码
-        return response.text
+        # 从页面中提取token
+        token_match = re.search(r'name="token"\s+value="([^"]+)"', response.text)
+        if not token_match:
+            print("无法获取token")
+            return None
+        
+        token = token_match.group(1)
+        
+        # 构造解密请求
+        decrypt_url = url.rstrip('/') + '/?paste'
+        data = {
+            'password': password,
+            'token': token
+        }
+        
+        response = session.post(decrypt_url, headers=headers, data=data, timeout=15)
+        response.raise_for_status()
+        
+        # 解析返回的JSON数据
+        result = response.json()
+        if result.get('status') == 0:
+            return result.get('data')  # 返回解密后的内容
+        else:
+            error_msg = result.get('message', '未知错误')
+            if '错误的密码' in error_msg:
+                return None  # 密码错误
+            print(f"解密失败: {error_msg}")
+            return None
+            
     except Exception as e:
-        print(f"获取paste.to内容失败: {str(e)}")
+        print(f"解密过程中出错: {str(e)}")
         return None
 
 def brute_force_paste(url):
@@ -65,7 +91,7 @@ def brute_force_paste(url):
             elapsed = time.time() - start_time
             print(f"尝试进度: {attempts}/{total} ({(attempts/total)*100:.1f}%), 已用时: {elapsed:.1f}秒, 当前尝试: {password}")
         
-        content = get_paste_content(url, password)
+        content = decrypt_paste_content(url, password)
         
         if content is not None:
             elapsed = time.time() - start_time
@@ -114,9 +140,7 @@ def find_latest_video(channel_url):
     return videos[0]
 
 def extract_encoded_paste_links(content):
-    """
-    精确查找编码后的paste.to链接
-    """
+    """精确查找编码后的paste.to链接"""
     print("正在搜索编码后的paste.to链接...")
     links = []
     
@@ -165,15 +189,9 @@ def main():
         first_paste_link = paste_links[0]
         print(f"\n正在访问第一个paste.to链接: {first_paste_link}")
         
-        # 首先尝试无密码访问
-        paste_content = get_paste_content(first_paste_link)
-        
-        if paste_content:
-            print("\npaste.to页面内容(无密码):")
-            print("-" * 50)
-            print(paste_content)
-            print("-" * 50)
-        else:
+        # 检查是否需要密码
+        initial_content = requests.get(first_paste_link).text
+        if check_password_protected(initial_content):
             print("\n该paste.to内容受密码保护，开始暴力破解...")
             password, content = brute_force_paste(first_paste_link)
             
@@ -185,6 +203,9 @@ def main():
                     f.write("Content:\n")
                     f.write(content)
                 print("\n结果已保存到 paste_result.txt")
+        else:
+            print("\n该paste.to内容不需要密码")
+            # 这里可以添加处理无密码内容的逻辑
     else:
         print("\n未找到paste.to链接")
 
