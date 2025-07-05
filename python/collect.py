@@ -3,6 +3,12 @@ import re
 from datetime import datetime
 from urllib.parse import urljoin, unquote
 import json
+import base64
+import zlib
+from Crypto.Cipher import AES
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Hash import SHA256
+from tqdm import tqdm  # 用于显示进度条
 
 def get_youtube_content(url):
     """获取YouTube页面内容"""
@@ -75,13 +81,11 @@ def parse_paste_jsonld(json_data):
         'content': {}
     }
     
-    # 基础字段
     parsed['status'] = json_data.get('status')
     parsed['id'] = json_data.get('id')
     parsed['url'] = json_data.get('url')
     parsed['version'] = json_data.get('v')
     
-    # 加密数据
     if 'adata' in json_data:
         parsed['encryption']['adata'] = json_data['adata']
         if isinstance(json_data['adata'], list) and len(json_data['adata']) > 0:
@@ -97,15 +101,12 @@ def parse_paste_jsonld(json_data):
                     'compression': json_data['adata'][0][7]
                 })
     
-    # 密文
     if 'ct' in json_data:
         parsed['content']['cipher_text'] = json_data['ct']
     
-    # 元数据
     if 'meta' in json_data:
         parsed['metadata'] = json_data['meta']
     
-    # 评论信息
     if 'comments' in json_data:
         parsed['comments'] = {
             'count': json_data.get('comment_count', 0),
@@ -137,6 +138,59 @@ def get_paste_jsonld(paste_url):
     except Exception as e:
         print(f"获取paste.to JSON-LD数据失败: {str(e)}")
         return None
+
+def brute_force_decrypt(paste_data):
+    """暴力破解4位数字密码"""
+    if not paste_data.get('content') or not paste_data.get('encryption'):
+        print("缺少解密所需的数据")
+        return None
+    
+    ciphertext = base64.b64decode(paste_data['content'].get('cipher_text', ''))
+    iv = base64.b64decode(paste_data['encryption'].get('iv', ''))
+    salt = base64.b64decode(paste_data['encryption'].get('salt', ''))
+    iterations = paste_data['encryption'].get('iterations', 100000)
+    compression = paste_data['encryption'].get('compression', 'zlib')
+    
+    print("\n开始暴力破解4位数字密码...")
+    
+    # 生成所有4位数字组合 (0000-9999)
+    passwords = [f"{i:04d}" for i in range(10000)]
+    
+    for password in tqdm(passwords, desc="尝试密码"):
+        try:
+            # 派生密钥
+            key = PBKDF2(
+                password.encode('utf-8'),
+                salt,
+                dkLen=32,  # 256-bit
+                count=iterations,
+                hmac_hash_module=SHA256
+            )
+            
+            # 解密
+            cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
+            decrypted = cipher.decrypt(ciphertext)
+            
+            # 处理压缩
+            if compression == 'zlib':
+                try:
+                    plaintext = zlib.decompress(decrypted).decode('utf-8')
+                    return password, plaintext
+                except zlib.error:
+                    pass
+            
+            # 尝试直接解码
+            try:
+                plaintext = decrypted.decode('utf-8')
+                if len(plaintext) > 10:  # 简单验证解密结果是否合理
+                    return password, plaintext
+            except UnicodeDecodeError:
+                continue
+                
+        except Exception:
+            continue
+    
+    return None, None
 
 def main():
     channel_url = "https://www.youtube.com/@ZYFXS"
@@ -182,15 +236,18 @@ def main():
         print(f"算法: {paste_data['encryption'].get('algorithm')}-{paste_data['encryption'].get('mode')}")
         print(f"压缩: {paste_data['encryption'].get('compression')}")
         
-        print("\n内容信息:")
-        print(f"密文长度: {len(paste_data['content'].get('cipher_text', '')) if 'cipher_text' in paste_data['content'] else 'N/A'}")
+        # 开始暴力破解
+        password, plaintext = brute_force_decrypt(paste_data)
         
-        if 'metadata' in paste_data and paste_data['metadata']:
-            print("\n元数据:")
-            for k, v in paste_data['metadata'].items():
-                print(f"{k}: {v}")
+        if password and plaintext:
+            print(f"\n破解成功! 密码: {password}")
+            print("\n解密内容:")
+            print(plaintext)
+        else:
+            print("\n未能破解密码")
     else:
         print("\n未能获取paste数据")
 
 if __name__ == "__main__":
+    # 安装必要库: pip install requests pycryptodome tqdm
     main()
