@@ -1,81 +1,107 @@
 import requests
-import json
-import base64
-import zlib
-from Crypto.Cipher import AES
-from Crypto.Protocol.KDF import PBKDF2
-from Crypto.Hash import HMAC, SHA256
+import re
+from datetime import datetime
+from urllib.parse import urljoin, unquote
 
-def decrypt_privatebin_v176(paste_url, password="1010"):
+def get_youtube_content(url):
+    """获取YouTube页面内容"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9'
+    }
     try:
-        # 1. 从URL提取ID和hash
-        url_parts = paste_url.split('?')
-        paste_id = url_parts[-1].split('#')[0] if '?' in paste_url else None
-        paste_hash = url_parts[-1].split('#')[1] if '#' in url_parts[-1] else None
-
-        if not paste_hash:
-            return "错误: URL中没有找到加密hash"
-
-        # 2. Base64解码hash部分 (兼容URL-safe和标准Base64)
-        padding = len(paste_hash) % 4
-        if padding:
-            paste_hash += '=' * (4 - padding)
-        
-        try:
-            decoded = base64.urlsafe_b64decode(paste_hash)
-        except:
-            decoded = base64.b64decode(paste_hash)
-        
-        print(f"Hash解码长度: {len(decoded)}字节")
-
-        # 3. PrivateBin 1.7.6 数据格式解析
-        # 结构: [版本(1字节)] + [salt(16字节)] + [iv(16字节)] + [加密数据]
-        if len(decoded) < 33:  # 1+16+16=33
-            return "错误: 数据长度不足"
-        
-        version = decoded[0]
-        salt = decoded[1:17]
-        iv = decoded[17:33]
-        ciphertext = decoded[33:] if len(decoded) > 33 else b''
-
-        print(f"版本: {version}")
-        print(f"Salt: {salt.hex()}")
-        print(f"IV: {iv.hex()}")
-        print(f"加密数据长度: {len(ciphertext)}字节")
-
-        # 4. 密钥派生 (PBKDF2-HMAC-SHA256)
-        key = PBKDF2(
-            password.encode('utf-8'),
-            salt,
-            dkLen=32,       # AES-256密钥长度
-            count=100000,   # PrivateBin 1.7.6默认迭代次数
-            prf=lambda p, s: HMAC.new(p, s, SHA256).digest()
-        )
-
-        # 5. AES-256-CBC解密
-        cipher = AES.new(key, AES.MODE_CBC, iv)
-        decrypted = cipher.decrypt(ciphertext)
-
-        # 6. 移除PKCS7填充
-        pad_length = decrypted[-1]
-        decrypted = decrypted[:-pad_length]
-
-        # 7. 解压缩 (zlib)
-        try:
-            decompressed = zlib.decompress(decrypted)
-            return decompressed.decode('utf-8')
-        except:
-            return decrypted.decode('utf-8', errors='ignore')
-
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        return response.text
     except Exception as e:
-        return f"解密过程中出错: {str(e)}"
+        print(f"获取内容失败: {str(e)}")
+        return None
 
-# 使用示例
-if __name__ == "__main__":
-    # 你的paste.to链接
-    paste_url = "https://paste.to/?7720f5f08a224bc6#2RtyqaPSVNtfaQMcpYxLmBpqhjpHUAYswrEUbxcZyG4W"
+def find_latest_video(channel_url):
+    """查找最新日期的视频"""
+    content = get_youtube_content(channel_url)
+    if not content:
+        return None
+
+    # 匹配日期格式的视频
+    date_pattern = re.compile(r'(\d{4}年\d{1,2}月\d{1,2}日).*?"url":"(/watch\?v=[^"]+)"')
+    matches = date_pattern.finditer(content)
     
-    # 解密 (使用默认密码1010)
-    result = decrypt_privatebin_v176(paste_url)
-    print("\n解密结果:")
-    print(result)
+    videos = []
+    for match in matches:
+        date_str = match.group(1)
+        video_path = match.group(2)
+        video_url = urljoin('https://www.youtube.com', video_path)
+        
+        try:
+            date_obj = datetime.strptime(date_str, '%Y年%m月%d日')
+            videos.append({
+                'date_str': date_str,
+                'date_obj': date_obj,
+                'url': video_url
+            })
+        except ValueError:
+            continue
+    
+    if not videos:
+        return None
+    
+    # 按日期排序获取最新视频
+    videos.sort(key=lambda x: x['date_obj'], reverse=True)
+    return videos[0]
+
+def extract_encoded_paste_links(content):
+    """
+    精确查找编码后的paste.to链接
+    搜索方法：
+    1. 查找"https%3A%2F%2Fpaste.to"字符串
+    2. 从该位置开始提取，直到遇到反斜杠或空格
+    """
+    print("正在搜索编码后的paste.to链接...")
+    links = []
+    
+    # 查找所有编码后的paste.to链接
+    matches = re.finditer(r'https%3A%2F%2Fpaste\.to[^\\\s]+', content)
+    
+    for match in matches:
+        encoded_url = match.group()
+        try:
+            # URL解码
+            decoded_url = unquote(encoded_url)
+            links.append(decoded_url)
+            print(f"找到编码链接: {encoded_url} -> 解码后: {decoded_url}")
+        except Exception as e:
+            print(f"解码失败: {encoded_url}, 错误: {str(e)}")
+    
+    return links
+
+def main():
+    channel_url = "https://www.youtube.com/@ZYFXS"
+    
+    print("正在查找最新视频...")
+    latest_video = find_latest_video(channel_url)
+    if not latest_video:
+        print("未找到符合条件的视频")
+        return
+    
+    print(f"\n找到最新视频: {latest_video['date_str']}")
+    print(f"视频链接: {latest_video['url']}")
+    
+    print("\n正在获取视频页面内容...")
+    content = get_youtube_content(latest_video['url'])
+    if not content:
+        print("无法获取页面内容")
+        return
+    
+    print("正在精确搜索编码后的paste.to链接...")
+    paste_links = extract_encoded_paste_links(content)
+    
+    if paste_links:
+        print("\n找到的paste.to链接:")
+        for i, link in enumerate(paste_links, 1):
+            print(f"{i}. {link}")
+    else:
+        print("\n未找到paste.to链接")
+
+if __name__ == "__main__":
+    main()
