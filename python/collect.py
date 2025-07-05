@@ -1,7 +1,8 @@
 import json
 from base64 import b64decode
 from Crypto.Cipher import AES
-from Crypto.Protocol.KDF import scrypt
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Hash import HMAC, SHA256
 import zlib
 
 # 从JSON响应中提取加密数据
@@ -21,13 +22,10 @@ response = {
 adata = response["adata"][0]
 salt = b64decode(adata[0])
 iv = b64decode(adata[1])
-iterations_original = adata[2]  # 原始是 100000
-key_len = adata[3] // 8  # 转换为字节
-tag_len = adata[4] // 8
+iterations = adata[2]  # 100000
+key_len = adata[3] // 8  # 256 bits -> 32 bytes
+tag_len = adata[4] // 8  # 128 bits -> 16 bytes
 cipher_text = b64decode(response["ct"])
-
-# 尝试两种可能的 N 值（2 的幂次方）
-possible_iterations = [65536, 131072]  # 2^16 和 2^17
 
 # 尝试两种密码格式
 passwords = [
@@ -36,33 +34,31 @@ passwords = [
 ]
 
 for password in passwords:
-    for N in possible_iterations:
-        try:
-            # 使用scrypt派生密钥
-            key = scrypt(
-                password=password,
-                salt=salt,
-                key_len=key_len,
-                N=N,  # 使用调整后的 N
-                r=8,
-                p=1
-            )
-            
-            # 分离密文和认证标签
-            ciphertext = cipher_text[:-tag_len]
-            tag = cipher_text[-tag_len:]
-            
-            # 创建解密器
-            cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
-            
-            # 解密
-            decrypted = cipher.decrypt_and_verify(ciphertext, tag)
-            
-            # 解压缩
-            decompressed = zlib.decompress(decrypted)
-            
-            print(f"成功解密 (密码格式: {password}, N={N}):")
-            print(decompressed.decode('utf-8'))
-            break
-        except Exception as e:
-            print(f"解密失败 (密码格式: {password}, N={N}): {str(e)}")
+    try:
+        # PrivateBin 使用 PBKDF2-HMAC-SHA256 派生密钥
+        key = PBKDF2(
+            password=password,
+            salt=salt,
+            dkLen=key_len,  # 32 bytes
+            count=iterations,  # 100000
+            hmac_hash_module=SHA256
+        )
+        
+        # 分离密文和认证标签（GCM 的 tag 通常是 16 字节）
+        ciphertext = cipher_text[:-tag_len]
+        tag = cipher_text[-tag_len:]
+        
+        # 创建解密器
+        cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
+        
+        # 解密
+        decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+        
+        # 解压缩
+        decompressed = zlib.decompress(decrypted)
+        
+        print(f"成功解密 (密码格式: {password}):")
+        print(decompressed.decode('utf-8'))
+        break
+    except Exception as e:
+        print(f"解密失败 (密码格式: {password}): {str(e)}")
