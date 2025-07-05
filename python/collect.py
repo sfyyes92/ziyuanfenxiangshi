@@ -2,8 +2,15 @@ import json
 from base64 import b64decode
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import PBKDF2
-from Crypto.Hash import HMAC, SHA256
+from Crypto.Hash import SHA256
 import zlib
+
+def fix_b64_padding(b64_str):
+    # 补全 Base64 的 '=' 填充
+    missing_padding = len(b64_str) % 4
+    if missing_padding:
+        b64_str += '=' * (4 - missing_padding)
+    return b64_str
 
 # 从JSON响应中提取加密数据
 response = {
@@ -25,7 +32,10 @@ iv = b64decode(adata[1])
 iterations = adata[2]  # 100000
 key_len = adata[3] // 8  # 256 bits -> 32 bytes
 tag_len = adata[4] // 8  # 128 bits -> 16 bytes
-cipher_text = b64decode(response["ct"])
+
+# 修复 Base64 数据
+fixed_ct = fix_b64_padding(response["ct"])
+cipher_text = b64decode(fixed_ct)
 
 # 尝试两种密码格式
 passwords = [
