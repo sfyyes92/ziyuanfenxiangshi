@@ -24,7 +24,7 @@ key = PBKDF2(password, salt, dkLen=key_size, count=iterations, hmac_hash_module=
 
 # Step 2: Split cipher text into encrypted_data and tag
 encrypted_data = cipher_text[:-tag_size]
-	tag = cipher_text[-tag_size:]
+tag = cipher_text[-tag_size:]
 
 # Step 3: AES-GCM decryption
 cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
